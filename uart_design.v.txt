@@ -1,0 +1,181 @@
+module baud_gen(
+    input clk,
+    input reset,
+    output reg tick
+);
+
+parameter DIV = 5208;   // 50MHz / 9600
+
+reg [15:0] count;
+
+always @(posedge clk or posedge reset)
+begin
+    if(reset)
+    begin
+        count <= 0;
+        tick <= 0;
+    end
+    else
+    begin
+        if(count == DIV-1)
+        begin
+            count <= 0;
+            tick <= 1;
+        end
+        else
+        begin
+            count <= count + 1;
+            tick <= 0;
+        end
+    end
+end
+
+endmodule
+module uart_tx(
+    input clk,
+    input reset,
+    input baud_tick,
+    input start,
+    input [7:0] data_in,
+    output reg tx,
+    output reg done
+);
+
+reg [3:0] bit_index;
+reg [10:0] frame;
+reg sending;
+
+wire parity;
+
+assign parity = ^data_in;   // even parity
+
+always @(posedge clk or posedge reset)
+begin
+    if(reset)
+    begin
+        tx <= 1'b1;
+        sending <= 0;
+        done <= 0;
+        bit_index <= 0;
+    end
+
+    else
+    begin
+        if(start && !sending)
+        begin
+            sending <= 1;
+
+            frame <= {1'b1, parity, data_in, 1'b0};
+
+            bit_index <= 0;
+            done <= 0;
+        end
+
+        else if(sending && baud_tick)
+        begin
+            tx <= frame[bit_index];
+            bit_index <= bit_index + 1;
+
+            if(bit_index == 10)
+            begin
+                sending <= 0;
+                tx <= 1'b1;
+                done <= 1;
+            end
+        end
+    end
+end
+
+endmodule
+module uart_rx(
+    input clk,
+    input reset,
+    input baud_tick,
+    input rx,
+    output reg [7:0] data_out,
+    output reg parity_error,
+    output reg done
+);
+
+reg [3:0] bit_index;
+reg [10:0] shift;
+reg receiving;
+
+always @(posedge clk or posedge reset)
+begin
+    if(reset)
+    begin
+        receiving <= 0;
+        done <= 0;
+        bit_index <= 0;
+    end
+
+    else
+    begin
+        if(!receiving && rx == 0)
+        begin
+            receiving <= 1;
+            bit_index <= 0;
+            done <= 0;
+        end
+
+        else if(receiving && baud_tick)
+        begin
+            shift[bit_index] <= rx;
+            bit_index <= bit_index + 1;
+
+            if(bit_index == 10)
+            begin
+                receiving <= 0;
+
+                data_out <= shift[8:1];
+
+                if(^shift[8:1] != shift[9])
+                    parity_error <= 1;
+                else
+                    parity_error <= 0;
+
+                done <= 1;
+            end
+        end
+    end
+end
+
+endmodule
+module uart_top(
+    input clk,
+    input reset,
+    input start,
+    input [7:0] data_in,
+    output [7:0] data_out,
+    output parity_error
+);
+
+wire tx_line;
+wire baud_tick;
+
+baud_gen baud(
+    .clk(clk),
+    .reset(reset),
+    .tick(baud_tick)
+);
+
+uart_tx tx(
+    .clk(clk),
+    .reset(reset),
+    .baud_tick(baud_tick),
+    .start(start),
+    .data_in(data_in),
+    .tx(tx_line)
+);
+
+uart_rx rx(
+    .clk(clk),
+    .reset(reset),
+    .baud_tick(baud_tick),
+    .rx(tx_line),
+    .data_out(data_out),
+    .parity_error(parity_error)
+);
+
+endmodule

@@ -1,0 +1,88 @@
+`timescale 1ns/1ps
+
+module uart_tb;
+
+reg clk;
+reg reset;
+reg start;
+reg [7:0] data_in;
+
+wire [7:0] data_out;
+wire parity_error;
+
+// Instantiate top module
+uart_top uut (
+.clk(clk),
+.reset(reset),
+.start(start),
+.data_in(data_in),
+.data_out(data_out),
+.parity_error(parity_error)
+);
+
+// Clock generation (50 MHz)
+always #10 clk = ~clk;
+
+// Dump waveform (limit signals to avoid huge file)
+initial
+begin
+$dumpfile("uart_wave.vcd");
+$dumpvars(1, uart_tb);
+end
+
+initial
+begin
+clk = 0;
+reset = 1;
+start = 0;
+data_in = 8'b00000000;
+
+$display("UART Simulation Started");
+
+// release reset
+#50;
+reset = 0;
+
+// send first byte
+#100;
+data_in = 8'b10101010;
+start = 1;
+
+#20;
+start = 0;
+
+$display("Sent data = %b", data_in);
+
+// wait for transmission
+#20000;
+
+$display("Received data = %b", data_out);
+
+if(parity_error)
+    $display("Parity Error");
+else
+    $display("Parity Correct");
+
+
+// send second byte
+#20000;
+data_in = 8'b11001100;
+start = 1;
+
+#20;
+start = 0;
+
+$display("Sent data = %b", data_in);
+
+#20000;
+
+$display("Received data = %b", data_out);
+
+$display("Simulation Finished");
+
+#5000;
+$finish;
+
+end
+
+endmodule
